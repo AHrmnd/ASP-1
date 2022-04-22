@@ -30,23 +30,19 @@ def basket_price_mc_cv(
     ''' 
     compute price2: mc price based on normal model
     make sure you use the same seed
-
+    '''
     # Restore the state in order to generate the same state
     np.random.set_state(rand_st)  
     price2 = basket_price_mc(
         strike, spot, spot*vol, weights, texp, cor_m,
         intr, divr, cp, False, n_samples)
-    '''
-    price2 = 0
 
     ''' 
     compute price3: analytic price based on normal model
-    
-    price3 = basket_price_norm_analytic(
-        strike, spot, vol, weights, texp, cor_m, intr, divr, cp)
+    I think something wrong in the original code, so I modified it.
     '''
-    price3 = 0
-    
+    price3 = basket_price_norm_analytic(
+        strike, spot, vol*spot, weights, texp, cor_m, intr, divr, cp)
     # return two prices: without and with CV
     return np.array([price1, price1 - (price2 - price3)])
 
@@ -63,22 +59,20 @@ def basket_price_mc(
 
     cov_m = vol * cor_m * vol[:,None]
     chol_m = np.linalg.cholesky(cov_m)  # L matrix in slides
-
+    
     n_assets = spot.size
     znorm_m = np.random.normal(size=(n_assets, n_samples))
     
     if( bsm ) :
-        '''
-        PUT the simulation of the geometric brownian motion below
-        '''
-        prices = np.zeros_like(znorm_m)
+        diag = np.array([cov_m[i,i] for i in range(cov_m.shape[0])])[:,None]
+        prices = forward[:,None]*np.exp(-0.5 * texp * diag + np.sqrt(texp) * chol_m @ znorm_m)
     else:
         # bsm = False: normal model
         prices = forward[:,None] + np.sqrt(texp) * chol_m @ znorm_m
     
     price_weighted = weights @ prices
-    
     price = np.mean( np.fmax(cp*(price_weighted - strike), 0) )
+    
     return disc_fac * price
 
 
@@ -94,12 +88,19 @@ def basket_price_norm_analytic(
     2. compute the normal volatility of basket
     3. plug in the forward and volatility to the normal price formula
     
-    norm = pf.Norm(sigma, intr=intr, divr=divr)
-    norm.price(strike, spot, texp, cp=cp)
-    
     PUT YOUR CODE BELOW
     '''
+    div_fac = np.exp(-texp*divr)
+    disc_fac = np.exp(-texp*intr)
+    forward = spot / disc_fac * div_fac
     
+    cov_m = vol * cor_m * vol[:,None] 
+    basket_vol = np.sqrt(weights.T @ cov_m @ weights)
     
+    norm = pf.Norm(sigma=basket_vol, intr=intr, divr=divr)
+    prices = norm.price(strike, spot, texp, cp=cp)
     
-    return 0.0
+    price_weighted = weights @ prices
+    price = np.mean( np.fmax(cp*(price_weighted - strike), 0) )
+    
+    return disc_fac * price_weighted
